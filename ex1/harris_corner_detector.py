@@ -10,7 +10,7 @@ ID1 = '304851504'
 ID2 = '987654321'
 
 # Harris corner detector parameters - you may change them.
-K = 0.05
+K = 0.09
 CHECKERBOARD_THRESHOLD = 1e1
 GIRAFFE_THRESHOLD = 1e6
 BUTTERFLY_IMAGE = 'butterfly.jpg'
@@ -153,6 +153,7 @@ def create_grad_x_and_grad_y(input_image):
     """INSERT YOUR CODE HERE.
     REPLACE THE VALUES FOR Ix AND Iy WITH THE GRADIENTS YOU COMPUTED.
     """
+    image = image.astype(np.float32)
     image_shift_right = np.zeros((height, width + 1),dtype = image.dtype)
     image_shift_right[:,1:] = image
     Ix = image - image_shift_right[:,:-1]
@@ -162,9 +163,10 @@ def create_grad_x_and_grad_y(input_image):
     Iy = image - image_shift_bottom[:-1,:]
     
     #removal of last row\column
-    Ix = Ix[:,1:] #Requires clarification - shape of Ix is smaller then the image
-    Iy = Iy[1:,:] #Requires clarification - shape of Iy is smaller then the image
-
+    #Ix = Ix[:,1:] #Requires clarification - shape of Ix is smaller then the image
+    #Iy = Iy[1:,:] #Requires clarification - shape of Iy is smaller then the image
+    #Ix = np.hstack([Ix, np.zeros((height, 1), dtype=image.dtype)])  
+    #Iy = np.vstack([Iy, np.zeros((1, width), dtype=image.dtype)])   
     return Ix, Iy
 
 
@@ -194,11 +196,17 @@ def calculate_response_image(input_image, K):
     """
     # compute Ix and Iy
     Ix, Iy = create_grad_x_and_grad_y(input_image)
-
     """INSERT YOUR CODE HERE.
-    REPLACE THE resonse_image WITH THE RESPONSE IMAGE YOU CALCULATED."""
+    REPLACE THE resonse_image WITH THE RESPONSE IMAGE YOU CALCULATED."""    
+    g = np.ones((5,5))
+    Sxx = signal.convolve2d(np.square(Ix),g,"same")
+    Syy = signal.convolve2d(np.square(Iy),g,"same")
+    Sxy = signal.convolve2d(Ix*Iy,g,"same")
 
-    response_image = np.random.uniform(size=Ix.shape)
+    det = Sxx*Syy - Sxy**2
+    trace = Sxx + Syy
+
+    response_image = det -K*np.square(trace)
     return response_image
 
 
