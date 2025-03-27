@@ -142,17 +142,29 @@ def create_grad_x_and_grad_y(input_image):
         # this is the case of a black and white image
         nof_color_channels = 1
         height, width = input_image.shape
-
+        image = input_image
     else:
         # this is the case of an RGB image
         nof_color_channels = 3
         height, width, _ = input_image.shape
+        image = cv2.cvtColor(input_image, cv2.COLOR_RGB2GRAY)
+    
 
     """INSERT YOUR CODE HERE.
     REPLACE THE VALUES FOR Ix AND Iy WITH THE GRADIENTS YOU COMPUTED.
     """
-    Ix = np.random.uniform(size=(height, width))
-    Iy = np.random.uniform(size=(height, width))
+    image_shift_right = np.zeros((height, width + 1),dtype = image.dtype)
+    image_shift_right[:,1:] = image
+    Ix = image - image_shift_right[:,:-1]
+
+    image_shift_bottom = np.zeros((height+1, width),dtype = image.dtype)
+    image_shift_bottom[1:,:] = image
+    Iy = image - image_shift_bottom[:-1,:]
+    
+    #removal of last row\column
+    Ix = Ix[:,1:] #Requires clarification - shape of Ix is smaller then the image
+    Iy = Iy[1:,:] #Requires clarification - shape of Iy is smaller then the image
+
     return Ix, Iy
 
 
