@@ -238,7 +238,22 @@ def our_harris_corner_detector(input_image, K, threshold):
     response_image = calculate_response_image(input_image, K)
     """INSERT YOUR CODE HERE.
     REPLACE THE output_image WITH THE BINARY MAP YOU COMPUTED."""
-    output_image = np.random.uniform(size=response_image.shape)
+    image_black_white_tiles = black_and_white_image_to_tiles(response_image, 25, 25)
+
+    max_idx_flat = np.argmax(image_black_white_tiles.reshape(image_black_white_tiles.shape[0], -1), axis=1)
+    max_idx_2d = np.array([np.unravel_index(idx, (25, 25)) for idx in max_idx_flat])
+
+    result_tile = np.zeros_like(image_black_white_tiles)
+    tile_max_indices = np.arange(image_black_white_tiles.shape[0])  
+
+    # Assign max values using vectorized indexing
+    result_tile[tile_max_indices, max_idx_2d[:, 0], max_idx_2d[:, 1]] = image_black_white_tiles[tile_max_indices, max_idx_2d[:, 0], max_idx_2d[:, 1]]
+
+    h,w = input_image.shape[0],input_image.shape[1]
+    image_black_white = image_tiles_to_black_and_white_image(result_tile, h, w)
+    output_image = np.zeros_like(input_image)
+
+    output_image[image_black_white>threshold] = 1
     return output_image
 
 
