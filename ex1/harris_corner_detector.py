@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 
 # replace these with your IDs:
 ID1 = '304851504'
-ID2 = '987654321'
+ID2 = ''
 
 # Harris corner detector parameters - you may change them.
 K = 0.09
@@ -106,11 +106,11 @@ def test_tiles_functions(to_save=False):
     plt.subplot(1, 3, 3)
     plt.title('re-assembled image')
     plt.imshow(reassembled_image, cmap='gray')
-
     fig = plt.gcf()
     fig.set_size_inches((20, 7))
     if to_save:
         plt.savefig(TEST_BLOCKS_FUNCTIONS_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -276,6 +276,7 @@ def plot_response_for_black_an_white_image(input_image, response_image,
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(RESPONSE_BW_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -298,6 +299,7 @@ def plot_response_for_rgb_image(input_image, response_image, to_save=False):
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(RESPONSE_RGB_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -321,8 +323,10 @@ def create_corner_plots(black_and_white_image, black_and_white_image_corners,
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(IMAGE_AND_CORNERS)
+        plt.close()
     else:
         plt.show()
+        
 
 
 def main(to_save=False):
@@ -353,4 +357,4 @@ def main(to_save=False):
 
 
 if __name__ == "__main__":
-    main(to_save=False)
+    main(to_save=True)
