@@ -80,7 +80,8 @@ def image_tiles_to_black_and_white_image(arr, h, w):
     """INSERT YOUR CODE HERE.
     REPLACE THE RETURNED VALUE WITH YOUR OWN IMPLEMENTATION.
     """
-    return np.random.uniform(size=(h, w))
+    arr = arr.reshape(h//nrows, -1, nrows, ncols).swapaxes(1,2).reshape(h, w)
+    return arr
 
 
 def test_tiles_functions(to_save=False):
