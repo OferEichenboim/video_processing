@@ -136,7 +136,22 @@ def convert_video_to_sobel(input_video_path, output_video_path):
     """INSERT YOUR CODE HERE.
         REMOVE THE pass KEYWORD AND IMPLEMENT YOUR OWN CODE.
         """
-    pass
+    input_video = cv2.VideoCapture(input_video_path)
+    video_params = get_video_parameters(input_video)
+
+    output_video = cv2.VideoWriter(output_video_path,video_params["fourcc"],float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=False)
+    
+    while input_video.isOpened():
+        ret, frame = input_video.read()
+        if not ret:
+            break
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        sobel = cv2.Sobel(frame_gray, -1, 1, 1, ksize=5)
+        output_video.write(sobel)
+    
+    input_video.release()
+    output_video.release()
+    cv2.destroyAllWindows() 
 
 
 def main():
