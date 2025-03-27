@@ -7,10 +7,10 @@ from matplotlib import pyplot as plt
 
 # replace these with your IDs:
 ID1 = '304851504'
-ID2 = '987654321'
+ID2 = ''
 
 # Harris corner detector parameters - you may change them.
-K = 0.05
+K = 0.09
 CHECKERBOARD_THRESHOLD = 1e1
 GIRAFFE_THRESHOLD = 1e6
 BUTTERFLY_IMAGE = 'butterfly.jpg'
@@ -59,7 +59,9 @@ def black_and_white_image_to_tiles(arr, nrows, ncols):
     """INSERT YOUR CODE HERE.
     REPLACE THE RETURNED VALUE WITH YOUR OWN IMPLEMENTATION.
     """
-    return np.random.uniform(size=((h//nrows) * (w //ncols), nrows, ncols))
+    arr = arr.copy()
+    arr = arr.reshape(h//nrows, nrows, -1, ncols).swapaxes(1,2).reshape(-1, nrows, ncols)   
+    return arr
 
 
 def image_tiles_to_black_and_white_image(arr, h, w):
@@ -78,7 +80,8 @@ def image_tiles_to_black_and_white_image(arr, h, w):
     """INSERT YOUR CODE HERE.
     REPLACE THE RETURNED VALUE WITH YOUR OWN IMPLEMENTATION.
     """
-    return np.random.uniform(size=(h, w))
+    arr = arr.reshape(h//nrows, -1, nrows, ncols).swapaxes(1,2).reshape(h, w)
+    return arr
 
 
 def test_tiles_functions(to_save=False):
@@ -97,18 +100,17 @@ def test_tiles_functions(to_save=False):
             plt.title(f'tile #{4 * i + j + 1}')
             plt.xticks([])
             plt.yticks([])
-
     height, width = butterfly_image.shape
     reassembled_image = image_tiles_to_black_and_white_image(tiles, height,
                                                               width)
     plt.subplot(1, 3, 3)
     plt.title('re-assembled image')
     plt.imshow(reassembled_image, cmap='gray')
-
     fig = plt.gcf()
     fig.set_size_inches((20, 7))
     if to_save:
         plt.savefig(TEST_BLOCKS_FUNCTIONS_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -140,17 +142,31 @@ def create_grad_x_and_grad_y(input_image):
         # this is the case of a black and white image
         nof_color_channels = 1
         height, width = input_image.shape
-
+        image = input_image
     else:
         # this is the case of an RGB image
         nof_color_channels = 3
         height, width, _ = input_image.shape
+        image = cv2.cvtColor(input_image, cv2.COLOR_RGB2GRAY)
+    
 
     """INSERT YOUR CODE HERE.
     REPLACE THE VALUES FOR Ix AND Iy WITH THE GRADIENTS YOU COMPUTED.
     """
-    Ix = np.random.uniform(size=(height, width))
-    Iy = np.random.uniform(size=(height, width))
+    image = image.astype(np.float32)
+    image_shift_right = np.zeros((height, width + 1),dtype = image.dtype)
+    image_shift_right[:,1:] = image
+    Ix = image - image_shift_right[:,:-1]
+
+    image_shift_bottom = np.zeros((height+1, width),dtype = image.dtype)
+    image_shift_bottom[1:,:] = image
+    Iy = image - image_shift_bottom[:-1,:]
+    
+    #removal of last row\column
+    #Ix = Ix[:,1:] #Requires clarification - shape of Ix is smaller then the image
+    #Iy = Iy[1:,:] #Requires clarification - shape of Iy is smaller then the image
+    #Ix = np.hstack([Ix, np.zeros((height, 1), dtype=image.dtype)])  
+    #Iy = np.vstack([Iy, np.zeros((1, width), dtype=image.dtype)])   
     return Ix, Iy
 
 
@@ -180,11 +196,17 @@ def calculate_response_image(input_image, K):
     """
     # compute Ix and Iy
     Ix, Iy = create_grad_x_and_grad_y(input_image)
-
     """INSERT YOUR CODE HERE.
-    REPLACE THE resonse_image WITH THE RESPONSE IMAGE YOU CALCULATED."""
+    REPLACE THE resonse_image WITH THE RESPONSE IMAGE YOU CALCULATED."""    
+    g = np.ones((5,5))
+    Sxx = signal.convolve2d(np.square(Ix),g,"same")
+    Syy = signal.convolve2d(np.square(Iy),g,"same")
+    Sxy = signal.convolve2d(Ix*Iy,g,"same")
 
-    response_image = np.random.uniform(size=Ix.shape)
+    det = Sxx*Syy - Sxy**2
+    trace = Sxx + Syy
+
+    response_image = det -K*np.square(trace)
     return response_image
 
 
@@ -216,7 +238,22 @@ def our_harris_corner_detector(input_image, K, threshold):
     response_image = calculate_response_image(input_image, K)
     """INSERT YOUR CODE HERE.
     REPLACE THE output_image WITH THE BINARY MAP YOU COMPUTED."""
-    output_image = np.random.uniform(size=response_image.shape)
+    image_black_white_tiles = black_and_white_image_to_tiles(response_image, 25, 25)
+
+    max_idx_flat = np.argmax(image_black_white_tiles.reshape(image_black_white_tiles.shape[0], -1), axis=1)
+    max_idx_2d = np.array([np.unravel_index(idx, (25, 25)) for idx in max_idx_flat])
+
+    result_tile = np.zeros_like(image_black_white_tiles)
+    tile_max_indices = np.arange(image_black_white_tiles.shape[0])  
+
+    # Assign max values using vectorized indexing
+    result_tile[tile_max_indices, max_idx_2d[:, 0], max_idx_2d[:, 1]] = image_black_white_tiles[tile_max_indices, max_idx_2d[:, 0], max_idx_2d[:, 1]]
+
+    h,w = input_image.shape[0],input_image.shape[1]
+    image_black_white = image_tiles_to_black_and_white_image(result_tile, h, w)
+    output_image = np.zeros_like(input_image)
+
+    output_image[image_black_white>threshold] = 1
     return output_image
 
 
@@ -239,6 +276,7 @@ def plot_response_for_black_an_white_image(input_image, response_image,
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(RESPONSE_BW_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -261,6 +299,7 @@ def plot_response_for_rgb_image(input_image, response_image, to_save=False):
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(RESPONSE_RGB_IMAGE)
+        plt.close()
     else:
         plt.show()
 
@@ -284,8 +323,10 @@ def create_corner_plots(black_and_white_image, black_and_white_image_corners,
     fig.set_size_inches((14, 7))
     if to_save:
         plt.savefig(IMAGE_AND_CORNERS)
+        plt.close()
     else:
         plt.show()
+        
 
 
 def main(to_save=False):
@@ -316,4 +357,4 @@ def main(to_save=False):
 
 
 if __name__ == "__main__":
-    main(to_save=False)
+    main(to_save=True)
