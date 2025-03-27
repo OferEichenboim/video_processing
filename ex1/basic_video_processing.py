@@ -49,8 +49,22 @@ def convert_video_to_grayscale(input_video_path, output_video_path):
     """INSERT YOUR CODE HERE.
     REMOVE THE pass KEYWORD AND IMPLEMENT YOUR OWN CODE.
     """
-    pass
+    input_video = cv2.VideoCapture(input_video_path)
+    video_params = get_video_parameters(input_video)
 
+    output_video = cv2.VideoWriter(output_video_path,video_params["fourcc"], float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=False)
+
+    while input_video.isOpened():
+        ret, frame = input_video.read()
+        if not ret:
+            break
+        gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        output_video.write(gray_frame)
+    
+    input_video.release()
+    output_video.release()
+    cv2.destroyAllWindows()
 
 def convert_video_to_black_and_white(input_video_path, output_video_path):
     """Convert the video in the input path to black and white.
