@@ -59,7 +59,9 @@ def black_and_white_image_to_tiles(arr, nrows, ncols):
     """INSERT YOUR CODE HERE.
     REPLACE THE RETURNED VALUE WITH YOUR OWN IMPLEMENTATION.
     """
-    return np.random.uniform(size=((h//nrows) * (w //ncols), nrows, ncols))
+    arr = arr.copy()
+    arr = arr.reshape(h//nrows, nrows, -1, ncols).swapaxes(1,2).reshape(-1, nrows, ncols)   
+    return arr
 
 
 def image_tiles_to_black_and_white_image(arr, h, w):
@@ -97,7 +99,6 @@ def test_tiles_functions(to_save=False):
             plt.title(f'tile #{4 * i + j + 1}')
             plt.xticks([])
             plt.yticks([])
-
     height, width = butterfly_image.shape
     reassembled_image = image_tiles_to_black_and_white_image(tiles, height,
                                                               width)
