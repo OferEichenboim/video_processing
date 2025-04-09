@@ -6,8 +6,8 @@ from scipy.interpolate import griddata
 
 
 # FILL IN YOUR ID
-ID1 = 123456789
-ID2 = 987654321
+ID1 = 304851504
+ID2 = 111111111
 
 
 PYRAMID_FILTER = 1.0 / 256 * np.array([[1, 4, 6, 4, 1],
@@ -65,6 +65,10 @@ def build_pyramid(image: np.ndarray, num_levels: int) -> list[np.ndarray]:
     """
     pyramid = [image.copy()]
     """INSERT YOUR CODE HERE."""
+    for level in range(1,num_levels+1):
+       filtered = signal.convolve2d(pyramid[level-1],PYRAMID_FILTER,mode = "same",boundary="symm") 
+       decimated = filtered[::2,::2]
+       pyramid.append(decimated)
     return pyramid
 
 
