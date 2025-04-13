@@ -111,8 +111,38 @@ def lucas_kanade_step(I1: np.ndarray,
     """INSERT YOUR CODE HERE.
     Calculate du and dv correctly.
     """
+
+    Ix = signal.convolve2d(I2, X_DERIVATIVE_FILTER,mode = "same",boundary="symm")
+    Iy = signal.convolve2d(I2, Y_DERIVATIVE_FILTER,mode = "same",boundary="symm")
+
+    It = I2-I1
+
     du = np.zeros(I1.shape)
     dv = np.zeros(I1.shape)
+
+    rows,cols = I1.shape
+    mid = window_size//2
+
+    for row in range(mid, rows - mid):
+        for col in range(mid, cols - mid):
+            #Create the least squares calculation to determine x using the naming convention Ax = b
+            Ax = Ix[row-mid:row + mid+1,col-mid:col+mid+1]#.reshape(window_size**2,1)
+            Ay = Iy[row-mid:row + mid+1,col-mid:col+mid+1]#.reshape(window_size**2,1)
+            A = np.column_stack((Ax.flatten(),Ay.flatten()))
+            b = It[row-mid:row + mid+1,col-mid:col+mid+1]
+            b = (-1.0)*b.flatten()
+            
+            AAt_iverse = np.zeros((2,2))
+            #handle use case of singular matrix
+            try:
+                AAt_iverse = np.linalg.inv(np.dot(A.T,A))
+            except np.linalg.LinAlgError as e:
+                pass
+                
+            res = np.dot(AAt_iverse, np.dot(A.T,b))
+            res = np.nan_to_num(res,nan=0)
+            du[row,col] = res[0] #might be the opposite between u and v
+            dv[row,col] = res[1]
     return du, dv
 
 
@@ -149,6 +179,27 @@ def warp_image(image: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
     """INSERT YOUR CODE HERE.
     Replace image_warp with something else.
     """
+    orig_u_shape = u.shape[1]
+    orig_v_shape = v.shape[0]
+    u = cv2.resize(u, (image.shape[1], image.shape[0]))
+    v = cv2.resize(v, (image.shape[1], image.shape[0]))
+    
+    u = u*image.shape[1]/orig_u_shape
+    v = v*image.shape[0]/orig_v_shape
+
+    x,y = np.meshgrid(np.arange(image.shape[1]), np.arange(image.shape[0]))
+    
+    grid_points = np.stack([x.flatten(),y.flatten()],axis=-1) 
+    
+    vals = image.flatten()
+ 
+    interp_points = (x + u,y + v)
+    image_warp = griddata(grid_points, vals, interp_points, method='linear',fill_value = np.nan)
+    
+    nan_mask = np.isnan(image_warp)
+
+    image_warp[nan_mask] = image[nan_mask]
+
     return image_warp
 
 
@@ -209,8 +260,19 @@ def lucas_kanade_optical_flow(I1: np.ndarray,
     v = np.zeros(pyarmid_I2[-1].shape)
     """INSERT YOUR CODE HERE.
        Replace u and v with their true value."""
-    u = np.zeros(I1.shape)
-    v = np.zeros(I1.shape)
+    for idx in reversed(range(len(pyarmid_I2))):
+        I2_warped = warp_image(pyarmid_I2[idx],u,v)
+        for iter in range(max_iter):
+            du,dv = lucas_kanade_step(pyramid_I1[idx],I2_warped,window_size)  
+            u+=du
+            v+=dv  
+        if idx>0: 
+            u = cv2.resize(u,(pyarmid_I2[idx-1].shape[1],pyarmid_I2[idx-1].shape[0]))
+            v = cv2.resize(v,(pyarmid_I2[idx-1].shape[1],pyarmid_I2[idx-1].shape[0]))
+            u,v = u*2,v*2
+
+    #u = np.zeros(I1.shape)
+    #v = np.zeros(I1.shape)
     return u, v
 
 
