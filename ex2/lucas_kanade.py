@@ -404,19 +404,20 @@ def faster_lucas_kanade_step(I1: np.ndarray,
     Calculate du and dv correctly.
     """
     #small sized image factor
-    ratio_factor = 10
+    ratio_factor = 5
     if I1.shape[0]<ratio_factor*window_size:
         du,dv = lucas_kanade_step(I1,I2,window_size)
     else:
         #find corners
+        I2 = I2.astype(np.float32)
         b_size = 2
         k_size = 3
-        free = 0.04
+        free = 0.03
         region_image = cv2.cornerHarris(I2,b_size,k_size,free)
-        corners_threshold = 0.01
+        corners_threshold = 0.04
         corners_image = region_image>corners_threshold*region_image.max() #find corners above certain threshold
         row_indices, col_indices = np.where(corners_image)
-        corner_tups = [(row_indices[i],col_indices[i]) for i in range(len(rows))]
+        corner_tups = [(row_indices[i],col_indices[i]) for i in range(len(row_indices))]
 
         #LK calculation same as previous function
         Ix = signal.convolve2d(I2, X_DERIVATIVE_FILTER,mode = "same",boundary="symm")
@@ -481,8 +482,6 @@ def faster_lucas_kanade_optical_flow(
     v = np.zeros(pyarmid_I2[-1].shape)  # create v in the size of smallest image
     """INSERT YOUR CODE HERE.
     Replace u and v with their true value."""
-    u = np.zeros(I1.shape)
-    v = np.zeros(I1.shape)
 
     for idx in reversed(range(len(pyarmid_I2))):
         I2_warped = warp_image(pyarmid_I2[idx],u,v)
@@ -516,7 +515,8 @@ def lucas_kanade_faster_video_stabilization(
     """INSERT YOUR CODE HERE."""
     input_video = cv2.VideoCapture(input_video_path)
     video_params = get_video_parameters(input_video)
-    output_video = cv2.VideoWriter(output_video_path,video_params["fourcc"], float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=True)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID') #fix
+    output_video = cv2.VideoWriter(output_video_path,fourcc, float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=True)
 
     for frame_idx in tqdm(range(video_params["frame_count"])):
         ret, frame = input_video.read()
@@ -528,6 +528,7 @@ def lucas_kanade_faster_video_stabilization(
         #handle 1st frame
         if frame_idx == 0:
             # Grayscale already done above
+            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
             h_factor = int(np.ceil(gray.shape[0] / (2 ** (num_levels - 1 + 1))))
             w_factor = int(np.ceil(gray.shape[1] / (2 ** (num_levels - 1 + 1))))
             IMAGE_SIZE = (w_factor * (2 ** (num_levels - 1 + 1)),
@@ -539,13 +540,11 @@ def lucas_kanade_faster_video_stabilization(
             u_prev = np.zeros_like(gray, dtype=np.float32)
             v_prev = np.zeros_like(gray, dtype=np.float32)
             frame_prev = gray
-            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
             continue  
 
         #handle 2nd frame and beyond
         if gray.shape[::-1] != IMAGE_SIZE:
             gray = cv2.resize(gray, IMAGE_SIZE)
-
         u,v = faster_lucas_kanade_optical_flow(frame_prev,gray,window_size,max_iter,num_levels)
         u_mean = np.mean(u[window_size//2:-window_size//2,window_size//2:-window_size//2])
         v_mean = np.mean(v[window_size//2:-window_size//2,window_size//2:-window_size//2])
@@ -554,15 +553,18 @@ def lucas_kanade_faster_video_stabilization(
         u+=u_prev
         v+=v_prev
         u_prev,v_prev = u,v
+        
         #warp current frame
         frame_warped = warp_image(gray, u, v)
         frame_prev = gray  # keep original
         frame_warped = np.clip(frame_warped, 0, 255).astype(np.uint8)
         frame_warped_bgr = cv2.cvtColor(frame_warped, cv2.COLOR_GRAY2BGR)
+        frame_warped_bgr = cv2.resize(frame_warped_bgr,(video_params["width"],video_params["height"])) #resize to original image shape
         output_video.write(frame_warped_bgr)
+        
         #debug
-        DEBUG_SAVE_FRAMES = True
-        DEBUG_DIR = "debug_frames_faster"
+        DEBUG_SAVE_FRAMES = False
+        DEBUG_DIR = "debug_frames"
         import os
         if DEBUG_SAVE_FRAMES and not os.path.exists(DEBUG_DIR):
             os.makedirs(DEBUG_DIR)
@@ -599,7 +601,73 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
         None.
     """
     """INSERT YOUR CODE HERE."""
-    pass
+    input_video = cv2.VideoCapture(input_video_path)
+    video_params = get_video_parameters(input_video)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID') #fix
+    width = video_params["width"] - (start_cols+ end_cols)
+    height = video_params["height"] - (start_rows+end_rows)
+    output_video = cv2.VideoWriter(output_video_path,fourcc, float(video_params["fps"]),(width,height),isColor=True)
+
+    for frame_idx in tqdm(range(video_params["frame_count"])):
+        ret, frame = input_video.read()
+
+        if not ret:
+            break
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        #handle 1st frame
+        if frame_idx == 0:
+            # Grayscale already done above
+            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+            h_factor = int(np.ceil(gray.shape[0] / (2 ** (num_levels - 1 + 1))))
+            w_factor = int(np.ceil(gray.shape[1] / (2 ** (num_levels - 1 + 1))))
+            IMAGE_SIZE = (w_factor * (2 ** (num_levels - 1 + 1)),
+                        h_factor * (2 ** (num_levels - 1 + 1)))
+            
+            if gray.shape[::-1] != IMAGE_SIZE:
+                gray = cv2.resize(gray, IMAGE_SIZE)
+
+            u_prev = np.zeros_like(gray, dtype=np.float32)
+            v_prev = np.zeros_like(gray, dtype=np.float32)
+            frame_prev = gray
+            continue  
+
+        #handle 2nd frame and beyond
+        if gray.shape[::-1] != IMAGE_SIZE:
+            gray = cv2.resize(gray, IMAGE_SIZE)
+        u,v = faster_lucas_kanade_optical_flow(frame_prev,gray,window_size,max_iter,num_levels)
+        u_mean = np.mean(u[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        v_mean = np.mean(v[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        u.fill(u_mean)
+        v.fill(v_mean)
+        u+=u_prev
+        v+=v_prev
+        u_prev,v_prev = u,v
+        
+        #warp current frame
+        frame_warped = warp_image(gray, u, v)
+        frame_prev = gray  # keep original
+        frame_warped = np.clip(frame_warped, 0, 255).astype(np.uint8)
+        frame_warped_bgr = cv2.cvtColor(frame_warped, cv2.COLOR_GRAY2BGR)
+        frame_warped_bgr = cv2.resize(frame_warped_bgr,(width,height)) #resize to the cropped shape
+        output_video.write(frame_warped_bgr)
+        
+        #debug
+        DEBUG_SAVE_FRAMES = False
+        DEBUG_DIR = "debug_frames"
+        import os
+        if DEBUG_SAVE_FRAMES and not os.path.exists(DEBUG_DIR):
+            os.makedirs(DEBUG_DIR)
+
+        if DEBUG_SAVE_FRAMES:
+            debug_path = os.path.join(DEBUG_DIR, f"frame_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path, frame)
+            debug_path_warped = os.path.join(DEBUG_DIR, f"frame_warped_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path_warped, frame_warped) 
+
+    input_video.release()
+    output_video.release()
+    cv2.destroyAllWindows()
 
 
 def get_video_parameters(capture):
