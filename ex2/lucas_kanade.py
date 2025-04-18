@@ -22,26 +22,6 @@ Y_DERIVATIVE_FILTER = X_DERIVATIVE_FILTER.copy().transpose()
 
 WINDOW_SIZE = 5
 
-
-def get_video_parameters(capture: cv2.VideoCapture) -> dict:
-    """Get an OpenCV capture object and extract its parameters.
-
-    Args:
-        capture: cv2.VideoCapture object.
-
-    Returns:
-        parameters: dict. Video parameters extracted from the video.
-
-    """
-    fourcc = int(capture.get(cv2.CAP_PROP_FOURCC))
-    fps = int(capture.get(cv2.CAP_PROP_FPS))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    frame_count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
-    return {"fourcc": fourcc, "fps": fps, "height": height, "width": width,
-            "frame_count": frame_count}
-
-
 def build_pyramid(image: np.ndarray, num_levels: int) -> list[np.ndarray]:
     """Coverts image to a pyramid list of size num_levels.
 
@@ -327,7 +307,72 @@ def lucas_kanade_video_stabilization(input_video_path: str,
        all windows.
     """
     """INSERT YOUR CODE HERE."""
-    pass
+    input_video = cv2.VideoCapture(input_video_path)
+    video_params = get_video_parameters(input_video)
+    fourcc = cv2.VideoWriter_fourcc(*'XVID') #fix
+    output_video = cv2.VideoWriter(output_video_path,fourcc, float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=True)
+
+    for frame_idx in tqdm(range(video_params["frame_count"])):
+        ret, frame = input_video.read()
+
+        if not ret:
+            break
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        #handle 1st frame
+        if frame_idx == 0:
+            # Grayscale already done above
+            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+            h_factor = int(np.ceil(gray.shape[0] / (2 ** (num_levels - 1 + 1))))
+            w_factor = int(np.ceil(gray.shape[1] / (2 ** (num_levels - 1 + 1))))
+            IMAGE_SIZE = (w_factor * (2 ** (num_levels - 1 + 1)),
+                        h_factor * (2 ** (num_levels - 1 + 1)))
+            
+            if gray.shape[::-1] != IMAGE_SIZE:
+                gray = cv2.resize(gray, IMAGE_SIZE)
+
+            u_prev = np.zeros_like(gray, dtype=np.float32)
+            v_prev = np.zeros_like(gray, dtype=np.float32)
+            frame_prev = gray
+            continue  
+
+        #handle 2nd frame and beyond
+        if gray.shape[::-1] != IMAGE_SIZE:
+            gray = cv2.resize(gray, IMAGE_SIZE)
+        u,v = lucas_kanade_optical_flow(frame_prev,gray,window_size,max_iter,num_levels)
+        u_mean = np.mean(u[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        v_mean = np.mean(v[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        u.fill(u_mean)
+        v.fill(v_mean)
+        u+=u_prev
+        v+=v_prev
+        u_prev,v_prev = u,v
+        
+        #warp current frame
+        frame_warped = warp_image(gray, u, v)
+        frame_prev = gray  # keep original
+        frame_warped = np.clip(frame_warped, 0, 255).astype(np.uint8)
+        frame_warped_bgr = cv2.cvtColor(frame_warped, cv2.COLOR_GRAY2BGR)
+        frame_warped_bgr = cv2.resize(frame_warped_bgr,(video_params["width"],video_params["height"])) #resize to original image shape
+        output_video.write(frame_warped_bgr)
+        
+        #debug
+        DEBUG_SAVE_FRAMES = False
+        DEBUG_DIR = "debug_frames"
+        import os
+        if DEBUG_SAVE_FRAMES and not os.path.exists(DEBUG_DIR):
+            os.makedirs(DEBUG_DIR)
+
+        if DEBUG_SAVE_FRAMES:
+            debug_path = os.path.join(DEBUG_DIR, f"frame_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path, frame)
+            debug_path_warped = os.path.join(DEBUG_DIR, f"frame_warped_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path_warped, frame_warped) 
+
+    input_video.release()
+    output_video.release()
+    cv2.destroyAllWindows()
+
 
 
 def faster_lucas_kanade_step(I1: np.ndarray,
@@ -358,6 +403,49 @@ def faster_lucas_kanade_step(I1: np.ndarray,
     """INSERT YOUR CODE HERE.
     Calculate du and dv correctly.
     """
+    #small sized image factor
+    ratio_factor = 10
+    if I1.shape[0]<ratio_factor*window_size:
+        du,dv = lucas_kanade_step(I1,I2,window_size)
+    else:
+        #find corners
+        b_size = 2
+        k_size = 3
+        free = 0.04
+        region_image = cv2.cornerHarris(I2,b_size,k_size,free)
+        corners_threshold = 0.01
+        corners_image = region_image>corners_threshold*region_image.max() #find corners above certain threshold
+        row_indices, col_indices = np.where(corners_image)
+        corner_tups = [(row_indices[i],col_indices[i]) for i in range(len(rows))]
+
+        #LK calculation same as previous function
+        Ix = signal.convolve2d(I2, X_DERIVATIVE_FILTER,mode = "same",boundary="symm")
+        Iy = signal.convolve2d(I2, Y_DERIVATIVE_FILTER,mode = "same",boundary="symm")
+        It = I2-I1
+        du = np.zeros(I1.shape)
+        dv = np.zeros(I1.shape)
+        rows,cols = I1.shape
+        mid = window_size//2
+
+        for (row,col) in corner_tups:
+            #Create the least squares calculation to determine x using the naming convention Ax = b
+            Ax = Ix[row-mid:row + mid+1,col-mid:col+mid+1]#.reshape(window_size**2,1)
+            Ay = Iy[row-mid:row + mid+1,col-mid:col+mid+1]#.reshape(window_size**2,1)
+            A = np.column_stack((Ax.flatten(),Ay.flatten()))
+            b = It[row-mid:row + mid+1,col-mid:col+mid+1]
+            b = (-1.0)*b.flatten()
+            
+            AAt_iverse = np.zeros((2,2))
+            #handle use case of singular matrix
+            try:
+                AAt_iverse = np.linalg.inv(np.dot(A.T,A))
+            except np.linalg.LinAlgError as e:
+                pass
+                
+            res = np.dot(AAt_iverse, np.dot(A.T,b))
+            res = np.nan_to_num(res,nan=0)
+            du[row,col] = res[0] #might be the opposite between u and v
+            dv[row,col] = res[1]
     return du, dv
 
 
@@ -395,6 +483,18 @@ def faster_lucas_kanade_optical_flow(
     Replace u and v with their true value."""
     u = np.zeros(I1.shape)
     v = np.zeros(I1.shape)
+
+    for idx in reversed(range(len(pyarmid_I2))):
+        I2_warped = warp_image(pyarmid_I2[idx],u,v)
+        for iter in range(max_iter):
+            du,dv = faster_lucas_kanade_step(pyramid_I1[idx],I2_warped,window_size)  
+            u+=du
+            v+=dv  
+        if idx>0: 
+            u = cv2.resize(u,(pyarmid_I2[idx-1].shape[1],pyarmid_I2[idx-1].shape[0]))
+            v = cv2.resize(v,(pyarmid_I2[idx-1].shape[1],pyarmid_I2[idx-1].shape[0]))
+            u,v = u*2,v*2
+
     return u, v
 
 
@@ -414,7 +514,68 @@ def lucas_kanade_faster_video_stabilization(
         None.
     """
     """INSERT YOUR CODE HERE."""
-    pass
+    input_video = cv2.VideoCapture(input_video_path)
+    video_params = get_video_parameters(input_video)
+    output_video = cv2.VideoWriter(output_video_path,video_params["fourcc"], float(video_params["fps"]),(video_params["width"],video_params["height"]),isColor=True)
+
+    for frame_idx in tqdm(range(video_params["frame_count"])):
+        ret, frame = input_video.read()
+
+        if not ret:
+            break
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        #handle 1st frame
+        if frame_idx == 0:
+            # Grayscale already done above
+            h_factor = int(np.ceil(gray.shape[0] / (2 ** (num_levels - 1 + 1))))
+            w_factor = int(np.ceil(gray.shape[1] / (2 ** (num_levels - 1 + 1))))
+            IMAGE_SIZE = (w_factor * (2 ** (num_levels - 1 + 1)),
+                        h_factor * (2 ** (num_levels - 1 + 1)))
+            
+            if gray.shape[::-1] != IMAGE_SIZE:
+                gray = cv2.resize(gray, IMAGE_SIZE)
+
+            u_prev = np.zeros_like(gray, dtype=np.float32)
+            v_prev = np.zeros_like(gray, dtype=np.float32)
+            frame_prev = gray
+            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+            continue  
+
+        #handle 2nd frame and beyond
+        if gray.shape[::-1] != IMAGE_SIZE:
+            gray = cv2.resize(gray, IMAGE_SIZE)
+
+        u,v = faster_lucas_kanade_optical_flow(frame_prev,gray,window_size,max_iter,num_levels)
+        u_mean = np.mean(u[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        v_mean = np.mean(v[window_size//2:-window_size//2,window_size//2:-window_size//2])
+        u.fill(u_mean)
+        v.fill(v_mean)
+        u+=u_prev
+        v+=v_prev
+        u_prev,v_prev = u,v
+        #warp current frame
+        frame_warped = warp_image(gray, u, v)
+        frame_prev = gray  # keep original
+        frame_warped = np.clip(frame_warped, 0, 255).astype(np.uint8)
+        frame_warped_bgr = cv2.cvtColor(frame_warped, cv2.COLOR_GRAY2BGR)
+        output_video.write(frame_warped_bgr)
+        #debug
+        DEBUG_SAVE_FRAMES = True
+        DEBUG_DIR = "debug_frames_faster"
+        import os
+        if DEBUG_SAVE_FRAMES and not os.path.exists(DEBUG_DIR):
+            os.makedirs(DEBUG_DIR)
+
+        if DEBUG_SAVE_FRAMES:
+            debug_path = os.path.join(DEBUG_DIR, f"frame_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path, frame)
+            debug_path_warped = os.path.join(DEBUG_DIR, f"frame_warped_{frame_idx:04d}.png")
+            cv2.imwrite(debug_path_warped, frame_warped) 
+
+    input_video.release()
+    output_video.release()
+    cv2.destroyAllWindows()
 
 
 def lucas_kanade_faster_video_stabilization_fix_effects(
@@ -441,3 +602,18 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
     pass
 
 
+def get_video_parameters(capture):
+    """Get an OpenCV capture object and extract its parameters.
+    Args:
+        capture: VideoCapture object. The input video's VideoCapture.
+    Returns:
+        parameters: dict. A dictionary of parameters names to their values.
+    """
+    fourcc = int(capture.get(cv2.CAP_PROP_FOURCC))
+    fps = int(capture.get(cv2.CAP_PROP_FPS))
+    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+    count = int(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    parameters = {"fourcc": fourcc, "fps": fps, "height": height, "width": width, "frame_count":count}
+    return parameters
