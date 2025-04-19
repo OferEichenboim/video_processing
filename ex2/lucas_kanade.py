@@ -607,7 +607,8 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
     width = video_params["width"] - (start_cols+ end_cols)
     height = video_params["height"] - (start_rows+end_rows)
     output_video = cv2.VideoWriter(output_video_path,fourcc, float(video_params["fps"]),(width,height),isColor=True)
-
+    #print("VideoWriter opened:", output_video.isOpened())
+    #print("expected dim: (",height,",",width,",3)")
     for frame_idx in tqdm(range(video_params["frame_count"])):
         ret, frame = input_video.read()
 
@@ -618,7 +619,11 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
         #handle 1st frame
         if frame_idx == 0:
             # Grayscale already done above
-            output_video.write(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR))
+            cropped = gray[start_rows:-end_rows,start_cols:-end_cols]
+            #cropped = np.clip(cropped, 0, 255).astype(np.uint8)
+            cropped = cv2.cvtColor(cropped, cv2.COLOR_GRAY2BGR)
+            #print("cropped shape", cropped.shape,"cropped dtype: ",cropped.dtype)
+            output_video.write(cropped)
             h_factor = int(np.ceil(gray.shape[0] / (2 ** (num_levels - 1 + 1))))
             w_factor = int(np.ceil(gray.shape[1] / (2 ** (num_levels - 1 + 1))))
             IMAGE_SIZE = (w_factor * (2 ** (num_levels - 1 + 1)),
@@ -649,12 +654,14 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
         frame_prev = gray  # keep original
         frame_warped = np.clip(frame_warped, 0, 255).astype(np.uint8)
         frame_warped_bgr = cv2.cvtColor(frame_warped, cv2.COLOR_GRAY2BGR)
-        frame_warped_bgr = cv2.resize(frame_warped_bgr,(width,height)) #resize to the cropped shape
-        output_video.write(frame_warped_bgr)
+        frame_warped_bgr = cv2.resize(frame_warped_bgr,(video_params["width"],video_params["height"]))
+        cropped = frame_warped_bgr[start_rows:-end_rows,start_cols:-end_cols,:] 
+        #print("cropped shape", cropped.shape,"cropped dtype: ",cropped.dtype)
+        output_video.write(cropped)
         
         #debug
-        DEBUG_SAVE_FRAMES = False
-        DEBUG_DIR = "debug_frames"
+        DEBUG_SAVE_FRAMES = True
+        DEBUG_DIR = "debug_frames_fast_border_"
         import os
         if DEBUG_SAVE_FRAMES and not os.path.exists(DEBUG_DIR):
             os.makedirs(DEBUG_DIR)
@@ -668,6 +675,9 @@ def lucas_kanade_faster_video_stabilization_fix_effects(
     input_video.release()
     output_video.release()
     cv2.destroyAllWindows()
+    cap = cv2.VideoCapture(output_video_path)
+    print("Written video frame count:", int(cap.get(cv2.CAP_PROP_FRAME_COUNT)))
+    cap.release()
 
 
 def get_video_parameters(capture):
