@@ -2,3 +2,4 @@ ex1/test.py
 *.db
 ~*.docx
 *.md
+ex3/Images/*.png
